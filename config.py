@@ -78,6 +78,20 @@ THINKING_DURATION = 2.5      # Seconds spent sampling frames before committing t
 CLEAR_ROI_RESET_TIME = 1.0   # Seconds of empty background required to reset state after item is lifted
 CONFIDENCE_THRESHOLD = 0.45   # Minimum prompt probability to trigger object presence
 
+# Object Presence & Wall / Background Verification Parameters
+ENABLE_OBJECT_PRESENCE_CHECK = True
+MIN_OBJECTNESS_SCORE = 0.15  # Minimum structural objectness score (0.0 to 1.0) to confirm a physical object
+
+BACKGROUND_WALL_PROMPTS = [
+    "a photo of an empty table surface",
+    "a photo of a plain wall or painted wall background",
+    "a photo of a colorful wall or room interior",
+    "a photo of a brick wall or tiled surface",
+    "a photo of an empty floor or room background",
+    "a photo of a plain background with no object",
+    "a photo of a human hand or blurred background"
+]
+
 # Camera Settings
 DEFAULT_CAMERA_INDEX = 0
 FRAME_WIDTH = 1280

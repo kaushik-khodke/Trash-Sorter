@@ -32,6 +32,7 @@ class ThreadSafeStateMachine:
         self.thinking_start_time = None
         self.accumulated_scores = defaultdict(float)
         self.sample_count = 0
+        self.last_analysis = None
 
         self.latched_category = None
         self.latched_letter = None
@@ -53,6 +54,7 @@ class ThreadSafeStateMachine:
     def update_analysis(self, analysis):
         with self.lock:
             current_time = time.time()
+            self.last_analysis = analysis
 
             # CRITICAL SAFETY LOCK: If robotic arm is operating, DO NOT guess objects or accept commands!
             if self.state == self.STATE_ARM_OPERATING:
@@ -113,7 +115,8 @@ class ThreadSafeStateMachine:
                 "letter": self.latched_letter,
                 "display_name": self.latched_display_name,
                 "category": self.latched_category,
-                "confidence": self.latched_confidence
+                "confidence": self.latched_confidence,
+                "last_analysis": self.last_analysis
             }
 
     def _reset_nolock(self):
@@ -121,6 +124,7 @@ class ThreadSafeStateMachine:
         self.thinking_start_time = None
         self.accumulated_scores.clear()
         self.sample_count = 0
+        self.last_analysis = None
         self.latched_category = None
         self.latched_letter = None
         self.latched_display_name = None
@@ -159,17 +163,22 @@ def draw_hud(frame, snapshot, iiot, fps):
     display_name = snapshot["display_name"]
     confidence = snapshot["confidence"]
     progress = snapshot["progress"]
+    last_analysis = snapshot.get("last_analysis")
+
+    is_object_present = last_analysis.get("is_object_present", True) if last_analysis else True
+    objectness_score = last_analysis.get("objectness_score", 0.0) if last_analysis else 0.0
 
     if state == ThreadSafeStateMachine.STATE_ARM_OPERATING or state == ThreadSafeStateMachine.STATE_DECIDED:
         box_color = config.CATEGORIES[snapshot["category"]]["color"] if snapshot["category"] else (0, 165, 255)
     elif state == ThreadSafeStateMachine.STATE_THINKING:
         box_color = (0, 200, 255)
     else:
-        box_color = (120, 120, 120)
+        box_color = (0, 255, 120) if is_object_present else (80, 80, 160)
 
     # Draw Target Box
     cv2.rectangle(frame, (rx1, ry1), (rx2, ry2), box_color, 2)
-    cv2.putText(frame, "TARGET ZONE", (rx1, ry1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55, box_color, 1, cv2.LINE_AA)
+    label = "TARGET ZONE (OBJECT DETECTED)" if is_object_present else "TARGET ZONE (WALL / BACKGROUND)"
+    cv2.putText(frame, label, (rx1, ry1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.50, box_color, 1, cv2.LINE_AA)
 
     # --- TOP STATUS BANNER ---
     cv2.rectangle(frame, (0, 0), (w, 55), (15, 15, 15), -1)
@@ -184,8 +193,12 @@ def draw_hud(frame, snapshot, iiot, fps):
     cv2.rectangle(frame, (0, h - 90), (w, h), (15, 15, 15), -1)
 
     if state == ThreadSafeStateMachine.STATE_WAITING:
-        cv2.putText(frame, "STATUS: WAITING FOR WASTE ITEM IN TARGET ZONE...", (30, h - 45),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (180, 180, 180), 2, cv2.LINE_AA)
+        if not is_object_present:
+            cv2.putText(frame, f"STATUS: NO TRASH (PLAIN / COLORFUL WALL OR BACKGROUND) [Score: {objectness_score:.2f}]", (30, h - 45),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.60, (120, 140, 220), 2, cv2.LINE_AA)
+        else:
+            cv2.putText(frame, f"STATUS: WAITING FOR WASTE ITEM IN TARGET ZONE... [Score: {objectness_score:.2f}]", (30, h - 45),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.65, (180, 180, 180), 2, cv2.LINE_AA)
         cv2.putText(frame, "Press [R] to Reload / Reset system state", (30, h - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (120, 120, 120), 1, cv2.LINE_AA)
 

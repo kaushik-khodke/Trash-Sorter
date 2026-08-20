@@ -36,6 +36,33 @@ class TestTrashSorterSystem(unittest.TestCase):
         self.assertIsNotNone(analysis)
         self.assertIn("probabilities", analysis)
         self.assertIn("bg_prob", analysis)
+        self.assertIn("is_object_present", analysis)
+
+    def test_object_presence_detector_wall_vs_object(self):
+        """Verify ObjectPresenceDetector differentiates plain/wall background from foreground object."""
+        from model import ObjectPresenceDetector
+        detector = ObjectPresenceDetector()
+
+        # Uniform plain wall image
+        plain_wall = np.ones((300, 300, 3), dtype=np.uint8) * 210
+        is_present_wall, score_wall = detector.detect_presence(plain_wall)
+        self.assertFalse(is_present_wall, f"Plain wall misidentified as object! (score={score_wall})")
+
+        # Simulated object with high edge density and contrast
+        object_img = np.ones((300, 300, 3), dtype=np.uint8) * 210
+        import cv2
+        cv2.rectangle(object_img, (50, 50), (250, 250), (10, 10, 10), -1)
+        cv2.circle(object_img, (150, 150), 40, (255, 255, 255), -1)
+        is_present_obj, score_obj = detector.detect_presence(object_img)
+        self.assertTrue(is_present_obj, f"Object failed presence detection! (score={score_obj})")
+
+    def test_classifier_wall_filtering(self):
+        """Verify classifier sets is_valid=False for wall / plain backgrounds."""
+        classifier = OptimizedWasteClassifier()
+        wall_img = np.ones((300, 300, 3), dtype=np.uint8) * 180
+        analysis = classifier.analyze_frame(wall_img)
+        self.assertFalse(analysis["is_valid"], "Wall background incorrectly classified as valid trash object!")
+        self.assertFalse(analysis["is_object_present"], "Wall background failed presence detection check!")
 
 if __name__ == "__main__":
     unittest.main()
