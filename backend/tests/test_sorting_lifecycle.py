@@ -14,6 +14,14 @@ class TestSortingLifecycle(unittest.TestCase):
         self.assertIn("health", snap)
         self.assertIn("counts", snap)
 
+    def _wait_for_completion(self, max_wait=16.0):
+        start = time.time()
+        while time.time() - start < max_wait:
+            if self.sm.state == "WAITING":
+                return True
+            time.sleep(0.2)
+        return False
+
     def test_single_command_lifecycle_plastic(self):
         # Trigger Plastic [P]
         success, msg = self.sm.trigger_manual_command("PLASTIC", "P")
@@ -30,8 +38,9 @@ class TestSortingLifecycle(unittest.TestCase):
         self.assertFalse(dup_success)
         self.assertIn("Arm is currently in OPERATING state", dup_msg)
 
-        # Wait for simulated completion cycle (2.5s simulated delay)
-        time.sleep(3.0)
+        # Wait for smooth completion cycle (10-15s)
+        completed = self._wait_for_completion(15.0)
+        self.assertTrue(completed, "Routine did not complete within expected time.")
 
         # State should be back to WAITING
         snap_after = self.sm.get_telemetry_snapshot()
@@ -58,8 +67,8 @@ class TestSortingLifecycle(unittest.TestCase):
                 self.assertEqual(self.sm.last_detection["code"], code)
 
                 # Wait for completion
-                time.sleep(3.0)
-                self.assertEqual(self.sm.state, "WAITING", f"Failed to reset to WAITING for {cat}")
+                completed = self._wait_for_completion(15.0)
+                self.assertTrue(completed, f"Failed to reset to WAITING for {cat}")
 
     def test_emergency_stop_and_reset(self):
         # Trigger sorting
@@ -92,7 +101,8 @@ class TestSortingLifecycle(unittest.TestCase):
         # Sorting should still execute safely in offline/simulated mode
         success, msg = self.sm.trigger_manual_command("GLASS", "G")
         self.assertTrue(success)
-        time.sleep(3.0)
+        completed = self._wait_for_completion(15.0)
+        self.assertTrue(completed)
         self.assertEqual(self.sm.state, "WAITING")
 
 if __name__ == "__main__":

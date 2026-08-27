@@ -22,6 +22,15 @@ class TestEndToEndApiAndWebSocket(unittest.TestCase):
         self.assertEqual(res_health.status_code, 200)
         self.assertIsInstance(res_health.json(), list)
 
+    def _wait_for_completion(self, max_wait=16.0):
+        start = time.time()
+        while time.time() - start < max_wait:
+            snap = self.client.get("/api/telemetry").json()
+            if snap.get("state") == "WAITING":
+                return True
+            time.sleep(0.3)
+        return False
+
     def test_manual_sorting_command_and_lockout(self):
         # 1. Trigger Plastic [P]
         res = self.client.post("/api/control/manual", json={"category": "PLASTIC", "code": "P"})
@@ -38,8 +47,9 @@ class TestEndToEndApiAndWebSocket(unittest.TestCase):
         self.assertEqual(dup_res.status_code, 400)
         self.assertIn("Arm is currently in OPERATING state", dup_res.json()["detail"])
 
-        # 4. Wait for completion routine (2.5s)
-        time.sleep(3.0)
+        # 4. Wait for smooth completion routine (10-15s)
+        completed = self._wait_for_completion(15.0)
+        self.assertTrue(completed, "Plastic throw routine did not complete within 15s.")
 
         # 5. After completion, state MUST be WAITING and backend MUST be online
         snap_after = self.client.get("/api/telemetry").json()
@@ -50,7 +60,8 @@ class TestEndToEndApiAndWebSocket(unittest.TestCase):
         self.assertEqual(res_metal.status_code, 200)
         self.assertEqual(self.client.get("/api/telemetry").json()["state"], "OPERATING")
 
-        time.sleep(3.0)
+        completed_metal = self._wait_for_completion(15.0)
+        self.assertTrue(completed_metal, "Metal throw routine did not complete within 15s.")
         self.assertEqual(self.client.get("/api/telemetry").json()["state"], "WAITING")
 
     def test_websocket_telemetry_stream(self):

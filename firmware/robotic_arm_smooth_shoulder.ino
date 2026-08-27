@@ -31,6 +31,14 @@ void triggerEmergencyStop();
 bool checkEmergency();
 bool safeDelay(unsigned long ms);
 void homeState();
+void moveServoSlow(Servo &servo, int &currentPosVar, int targetPos, int speedDelay);
+void moveShoulderEased(int currentPos, int targetPos, int baseDelay);
+void pickUpObject();
+void throwPlastic();
+void throwPaper();
+void throwGlass();
+void throwMetal();
+void throwCardboard();
 
 
 //==================================================
@@ -225,36 +233,40 @@ void loop()
 
 
 //==================================================
-// SLOW SERVO MOVEMENT FUNCTION (generic, used for non-shoulder joints)
+// SLOW SERVO MOVEMENT FUNCTION (generic, used for smooth joint interpolation)
 //==================================================
 
-void moveServoSlow(Servo &servo, int currentPos, int targetPos, int speedDelay)
+void moveServoSlow(Servo &servo, int &currentPosVar, int targetPos, int speedDelay)
 {
-  if (currentPos < targetPos)
+  if (currentPosVar == targetPos) return;
+
+  if (currentPosVar < targetPos)
   {
-    for (int i = currentPos; i <= targetPos; i++)
+    for (int i = currentPosVar; i <= targetPos; i++)
     {
       if (checkEmergency()) return;
       servo.write(i);
+      currentPosVar = i;
       if (!safeDelay(speedDelay)) return;
     }
   }
   else
   {
-    for (int i = currentPos; i >= targetPos; i--)
+    for (int i = currentPosVar; i >= targetPos; i--)
     {
       if (checkEmergency()) return;
       servo.write(i);
+      currentPosVar = i;
       if (!safeDelay(speedDelay)) return;
     }
   }
+  currentPosVar = targetPos;
 }
 
 
 //==================================================
 // EASED SHOULDER MOVEMENT FUNCTION
-// Starts slow, speeds up in the middle, slows down again
-// near the target -> feels gentle/"easy" instead of a sudden snap.
+// Starts slow, speeds up smoothly, slows down gently near target.
 //==================================================
 
 void moveShoulderEased(int currentPos, int targetPos, int baseDelay)
@@ -277,13 +289,12 @@ void moveShoulderEased(int currentPos, int targetPos, int baseDelay)
     int distFromEnd = totalSteps - step;
     int distFromEdge = min(distFromStart, distFromEnd);
 
-    // Ease window: how many steps at each end get the slow treatment
-    int easeWindow = min(15, totalSteps / 3);
+    // Ease window: steps at each end that receive smooth deceleration
+    int easeWindow = min(20, totalSteps / 3);
 
     int stepDelay;
     if (easeWindow > 0 && distFromEdge < easeWindow)
     {
-      // Slower near start/end: extra delay tapers off linearly
       int extra = map(distFromEdge, 0, easeWindow, baseDelay * 2, 0);
       stepDelay = baseDelay + extra;
     }
@@ -300,330 +311,277 @@ void moveShoulderEased(int currentPos, int targetPos, int baseDelay)
 
 
 //==================================================
-// PICK UP OBJECT
+// PICK UP OBJECT (~3.8 seconds)
 //==================================================
 
 void pickUpObject()
 {
   if (checkEmergency()) return;
 
-  // Open Gripper
-  hand.write(160);
-  handPos = 160;
-  if (!safeDelay(500)) return;
+  // Open Gripper smoothly
+  moveServoSlow(hand, handPos, 160, 10);
+  if (!safeDelay(400)) return;
 
-  // Move Down
-  wrist2.write(110);
-  wrist2Pos = 110;
-  if (!safeDelay(500)) return;
+  // Move Wrist & Elbow gently down
+  moveServoSlow(wrist2, wrist2Pos, 110, 15);
+  if (!safeDelay(300)) return;
 
-  elbow.write(140);
-  elbowPos = 140;
-  if (!safeDelay(500)) return;
+  moveServoSlow(elbow, elbowPos, 140, 15);
+  if (!safeDelay(300)) return;
 
-  // Shoulder moves slowly + gently (eased)
-  moveShoulderEased(shoulderPos, 32, 12);
+  // Shoulder moves slowly & gracefully down (eased, 22ms base delay)
+  moveShoulderEased(shoulderPos, 32, 22);
   if (checkEmergency()) return;
+  if (!safeDelay(400)) return;
 
-  if (!safeDelay(500)) return;
-
-  // Close Gripper
-  hand.write(15);
-  handPos = 15;
-  if (!safeDelay(200)) return;
-
-  hand.write(15);
-  handPos = 15;
-  if (!safeDelay(1000)) return;
+  // Close Gripper gently onto the waste item
+  moveServoSlow(hand, handPos, 15, 12);
+  if (!safeDelay(600)) return;
 }
 
 
 //==================================================
-// THROW PLASTIC (RIGHT)
+// THROW PLASTIC (RIGHT) (~5.5 seconds)
 //==================================================
 
 void throwPlastic()
 {
   if (checkEmergency()) return;
 
-  // Shoulder moves slowly + gently upwards
-  moveShoulderEased(shoulderPos, 100, 15);
+  // Shoulder lifts waste smoothly upwards
+  moveShoulderEased(shoulderPos, 100, 22);
   if (checkEmergency()) return;
 
-  elbow.write(130);
-  elbowPos = 130;
+  moveServoSlow(elbow, elbowPos, 130, 15);
+  moveServoSlow(wrist2, wrist2Pos, 110, 15);
+  if (!safeDelay(400)) return;
 
-  wrist2.write(110);
-  wrist2Pos = 110;
-
-  // RIGHT BIN: Rotate base motor
-  base.write(110);   // Move to the right
+  // RIGHT BIN: Rotate base motor steadily
+  base.write(110);
   basePos = 110;
   if (!safeDelay(1900)) {
-    base.write(90);  // Halt motor immediately on emergency
+    base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90);   // STOP the motor
+  base.write(90);
   basePos = 90;
-
   if (!safeDelay(400)) return;
 
-  // Release Object
-  hand.write(160);
-  handPos = 160;
-  if (!safeDelay(500)) return;
+  // Release Object into Right Bin
+  moveServoSlow(hand, handPos, 160, 10);
+  if (!safeDelay(600)) return;
 
-  // Return base
-  base.write(75);   
+  // Return base smoothly to center
+  base.write(75);
   basePos = 75;
   if (!safeDelay(1200)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90); 
+  base.write(90);
   basePos = 90;
+  if (!safeDelay(400)) return;
 }
 
 
 //==================================================
-// THROW PAPER (FAR RIGHT)
+// THROW PAPER (FAR RIGHT) (~5.8 seconds)
 //==================================================
 
 void throwPaper()
 {
   if (checkEmergency()) return;
 
-  elbow.write(140);
-  elbowPos = 140;
-  if (!safeDelay(500)) return;
-
-  // Shoulder moves slowly + gently upwards
-  moveShoulderEased(shoulderPos, 95, 15);
+  // Shoulder lifts waste smoothly upwards
+  moveShoulderEased(shoulderPos, 95, 22);
   if (checkEmergency()) return;
 
-  elbow.write(130);
-  elbowPos = 130;
-  if (!safeDelay(500)) return;
-
-  wrist2.write(110);
-  wrist2Pos = 110;
-  if (!safeDelay(500)) return;
-
-  // RIGHT BIN (Far Right)
-  base.write(120);   // Move to the far right
-  basePos = 120;
-  if (!safeDelay(2600)) {
-    base.write(90);
-    basePos = 90;
-    return;
-  }
-  base.write(90);   // STOP the motor
-  basePos = 90;
-
+  moveServoSlow(elbow, elbowPos, 130, 15);
+  moveServoSlow(wrist2, wrist2Pos, 110, 15);
   if (!safeDelay(400)) return;
 
-  // Release Object
-  hand.write(160);
-  handPos = 160;
-  if (!safeDelay(500)) return;
-
-  base.write(70); 
-  basePos = 70;
-  if (!safeDelay(2000)) {
+  // FAR RIGHT BIN: Rotate base motor steadily
+  base.write(120);
+  basePos = 120;
+  if (!safeDelay(2500)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90); 
+  base.write(90);
   basePos = 90;
+  if (!safeDelay(400)) return;
+
+  // Release Object into Far Right Bin
+  moveServoSlow(hand, handPos, 160, 10);
+  if (!safeDelay(600)) return;
+
+  // Return base smoothly to center
+  base.write(70);
+  basePos = 70;
+  if (!safeDelay(1900)) {
+    base.write(90);
+    basePos = 90;
+    return;
+  }
+  base.write(90);
+  basePos = 90;
+  if (!safeDelay(400)) return;
 }
 
 
 //==================================================
-// THROW GLASS (LEFT)
+// THROW GLASS (LEFT) (~5.5 seconds)
 //==================================================
 
 void throwGlass()
 {
   if (checkEmergency()) return;
 
-  // Shoulder moves slowly + gently upwards
-  moveShoulderEased(shoulderPos, 100, 15);
+  // Shoulder lifts waste smoothly upwards
+  moveShoulderEased(shoulderPos, 100, 22);
   if (checkEmergency()) return;
 
-  if (!safeDelay(500)) return;
+  moveServoSlow(elbow, elbowPos, 130, 15);
+  moveServoSlow(wrist2, wrist2Pos, 140, 15);
+  if (!safeDelay(400)) return;
 
-  elbow.write(130);
-  elbowPos = 130;
-  if (!safeDelay(500)) return;
-
-  wrist2.write(140);
-  wrist2Pos = 140;
-  if (!safeDelay(500)) return;
-
-  // LEFT BIN
-  base.write(70);  
+  // LEFT BIN: Rotate base motor steadily
+  base.write(70);
   basePos = 70;
   if (!safeDelay(2100)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90);  
+  base.write(90);
   basePos = 90;
-
   if (!safeDelay(400)) return;
-  
-  // Release Object
-  hand.write(160);
-  handPos = 160;
-  if (!safeDelay(500)) return;
 
-  base.write(120);  
+  // Release Object into Left Bin
+  moveServoSlow(hand, handPos, 160, 10);
+  if (!safeDelay(600)) return;
+
+  // Return base smoothly to center
+  base.write(120);
   basePos = 120;
   if (!safeDelay(1500)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90); 
+  base.write(90);
   basePos = 90;
+  if (!safeDelay(400)) return;
 }
 
 
 //==================================================
-// THROW METAL (FAR LEFT)
+// THROW METAL (FAR LEFT) (~5.5 seconds)
 //==================================================
 
 void throwMetal()
 {
   if (checkEmergency()) return;
 
-  hand.write(15);
-  handPos = 15;
-
-  moveShoulderEased(shoulderPos, 95, 15);
+  // Shoulder lifts waste smoothly upwards
+  moveShoulderEased(shoulderPos, 95, 22);
   if (checkEmergency()) return;
 
-  if (!safeDelay(500)) return;
+  moveServoSlow(elbow, elbowPos, 130, 15);
+  moveServoSlow(wrist2, wrist2Pos, 140, 15);
+  if (!safeDelay(400)) return;
 
-  elbow.write(130);
-  elbowPos = 130;
-  if (!safeDelay(1000)) return;
-
-  wrist2.write(140);
-  wrist2Pos = 140;
-  if (!safeDelay(500)) return;
-
-  // LEFT BIN
-  base.write(75);   
+  // FAR LEFT BIN: Rotate base motor steadily
+  base.write(75);
   basePos = 75;
-  if (!safeDelay(1500)) {
+  if (!safeDelay(1800)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90);  
+  base.write(90);
   basePos = 90;
-
   if (!safeDelay(400)) return;
 
-  // Release Object
-  hand.write(160);
-  handPos = 160;
-  if (!safeDelay(500)) return;
+  // Release Object into Far Left Bin
+  moveServoSlow(hand, handPos, 160, 10);
+  if (!safeDelay(600)) return;
 
-  base.write(110);   
+  // Return base smoothly to center
+  base.write(110);
   basePos = 110;
   if (!safeDelay(1600)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90); 
+  base.write(90);
   basePos = 90;
+  if (!safeDelay(400)) return;
 }
 
 
 //==================================================
-// THROW CARDBOARD (BACK)
+// THROW CARDBOARD (BACK) (~5.6 seconds)
 //==================================================
 
 void throwCardboard()
 {
   if (checkEmergency()) return;
 
-  moveShoulderEased(shoulderPos, 105, 15);
+  // Shoulder lifts waste smoothly upwards
+  moveShoulderEased(shoulderPos, 105, 22);
   if (checkEmergency()) return;
 
-  if (!safeDelay(500)) return;
+  moveServoSlow(elbow, elbowPos, 130, 15);
+  if (!safeDelay(300)) return;
 
-  elbow.write(130);
-  elbowPos = 130;
-  if (!safeDelay(1000)) return;
-  
-  // RIGHT BIN
-  base.write(125);   // Move to the right
+  // BACK BIN: Rotate base motor steadily
+  base.write(125);
   basePos = 125;
-  if (!safeDelay(2350)) {
+  if (!safeDelay(2200)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90);   // STOP the motor
+  base.write(90);
   basePos = 90;
-
   if (!safeDelay(400)) return;
 
-  moveShoulderEased(shoulderPos, 85, 15);
-  if (checkEmergency()) return;
-
+  moveShoulderEased(shoulderPos, 85, 20);
+  moveServoSlow(elbow, elbowPos, 110, 15);
   if (!safeDelay(300)) return;
 
-  elbow.write(110);
-  elbowPos = 110;
-  if (!safeDelay(500)) return;
+  // Release Object into Back Bin
+  moveServoSlow(hand, handPos, 160, 10);
+  if (!safeDelay(600)) return;
 
-  // Release Object
-  hand.write(160);
-  handPos = 160;
-  if (!safeDelay(500)) return;
-
-  base.write(60);   
+  // Return base smoothly to center
+  base.write(60);
   basePos = 60;
   if (!safeDelay(1600)) {
     base.write(90);
     basePos = 90;
     return;
   }
-  base.write(90); 
+  base.write(90);
   basePos = 90;
+  if (!safeDelay(400)) return;
 }
 
 
 //==================================================
-// HOME POSITION
+// HOME POSITION (~2.8 seconds)
 //==================================================
 
 void homeState()
 {
-  wrist2.write(160);
-  wrist2Pos = 160;
-  delay(200);
-
-  elbow.write(160);
-  elbowPos = 160;
-  delay(200);
-
-  // Shoulder moves slowly + gently back home
-  moveShoulderEased(shoulderPos, 85, 15);
-
-  delay(200);
-
-  // Half Open Waiting Position
-  hand.write(120);
-  handPos = 120;
-  delay(200);
+  moveServoSlow(wrist2, wrist2Pos, 160, 15);
+  moveServoSlow(elbow, elbowPos, 160, 15);
+  moveShoulderEased(shoulderPos, 85, 22);
+  moveServoSlow(hand, handPos, 120, 12);
+  safeDelay(400);
 }

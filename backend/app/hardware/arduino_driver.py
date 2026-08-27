@@ -273,25 +273,25 @@ class ArduinoArmDriver(BaseArmDriver):
                     logging.error(f"[HARDWARE] Exception in done callback: {e}")
             return
 
-        # Stage 1: Gripper Opening & Reach
-        time.sleep(0.4)
+        # Stage 1: Gripper Opening & Rotating to Pick (~2.5s)
+        time.sleep(2.5)
         self._add_log("RX", f"[STAGE 1/4 PICKUP] Rotating base & opening gripper (160°)")
 
-        # Stage 2: Lowering Arm & Gripping Object
-        time.sleep(0.6)
+        # Stage 2: Lowering Arm & Gripping Object (~2.5s)
+        time.sleep(2.5)
         self._add_log("RX", f"[STAGE 2/4 GRASP] Lowering shoulder (32°) & closing gripper (15°) -> Object Secured")
 
-        # Stage 3: Lifting & Discharging to Target Bin
-        time.sleep(0.8)
+        # Stage 3: Lifting & Discharging to Target Bin (~3.8s)
+        time.sleep(3.8)
         self._add_log("RX", f"[STAGE 3/4 THROW] Moving arm to {label} & opening gripper (160°)")
 
-        # Stage 4: Returning to Neutral Home Position
-        time.sleep(0.6)
+        # Stage 4: Returning to Neutral Home Position (~2.8s)
+        time.sleep(2.8)
         self.current_angles = SERVO_PRESETS["H"].copy()
         self._add_log("RX", "[STAGE 4/4 HOME] Repositioning 6-DOF servos to Neutral Home Stance (90°)")
 
-        # Stage 5: Completion signal
-        time.sleep(0.2)
+        # Stage 5: Completion signal (~0.4s)
+        time.sleep(0.4)
         self._add_log("RX", "[COMPLETE] Segregation movement routine finished.")
         self._add_log("RX", "Done")
 

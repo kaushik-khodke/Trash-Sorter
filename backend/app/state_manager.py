@@ -219,8 +219,8 @@ class DashboardStateManager:
                         log_detection(category_upper, label, avg_prob, code)
                         log_system_event("INFO", "VISION", f"Autonomous Segregation: {label} ({code})")
 
-                        # Deterministic safety auto-reset after 10.0s cycle
-                        self.active_timer = threading.Timer(10.0, self._auto_reset_operating_state)
+                        # Deterministic safety auto-reset fallback after 18.0s cycle
+                        self.active_timer = threading.Timer(18.0, self._auto_reset_operating_state)
                         self.active_timer.daemon = True
                         self.active_timer.start()
 
@@ -318,8 +318,8 @@ class DashboardStateManager:
 
             self.hardware.send_command(code)
 
-            # Deterministic auto-reset after 10.0s
-            self.active_timer = threading.Timer(10.0, self._auto_reset_operating_state)
+            # Deterministic auto-reset fallback after 18.0s
+            self.active_timer = threading.Timer(18.0, self._auto_reset_operating_state)
             self.active_timer.daemon = True
             self.active_timer.start()
 
