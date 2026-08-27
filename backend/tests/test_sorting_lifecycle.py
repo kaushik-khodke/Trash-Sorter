@@ -28,7 +28,7 @@ class TestSortingLifecycle(unittest.TestCase):
         # Concurrent/Duplicate trigger while OPERATING must be REJECTED
         dup_success, dup_msg = self.sm.trigger_manual_command("PLASTIC", "P")
         self.assertFalse(dup_success)
-        self.assertIn("currently executing", dup_msg)
+        self.assertIn("Arm is currently in OPERATING state", dup_msg)
 
         # Wait for simulated completion cycle (2.5s simulated delay)
         time.sleep(3.0)

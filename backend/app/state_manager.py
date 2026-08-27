@@ -289,10 +289,10 @@ class DashboardStateManager:
             return False, f"Invalid manual category '{action}'"
 
         with self.lock:
-            # Deterministic lockout: Prevent overlapping commands while sorting is in progress
-            if self.state == self.STATE_OPERATING:
-                logging.warning(f"[CONTROL] Ignored '{action_upper}': Arm is currently executing a sorting routine.")
-                return False, "Arm is currently executing a sorting routine. Please wait for completion."
+            # Deterministic lockout: Prevent overlapping commands while sorting is in progress or in emergency stop
+            if self.state in [self.STATE_OPERATING, self.STATE_EMERGENCY]:
+                logging.warning(f"[CONTROL] Ignored '{action_upper}': System is in {self.state} state.")
+                return False, f"Arm is currently in {self.state} state. Please wait or reset."
 
             code = CATEGORY_TO_CODE[action_upper]
             label = CATEGORY_LABELS[action_upper]
