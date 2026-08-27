@@ -72,7 +72,7 @@ class TestEndToEndApiAndWebSocket(unittest.TestCase):
 
             # Wait for completion callback -> WebSocket receives WAITING update
             final_state = None
-            for _ in range(5):
+            for _ in range(15):
                 msg = ws.receive_text()
                 data = json.loads(msg)
                 if data["state"] == "WAITING":

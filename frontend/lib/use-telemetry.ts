@@ -116,6 +116,16 @@ export function useTelemetry() {
   }, [])
 
   const sendCommand = useCallback(async (command: ManualCommand) => {
+    if (command.action === 'STOP' || command.code === 'E') {
+      setData((prev) => ({ ...prev, state: 'EMERGENCY' }))
+      try {
+        await api.triggerEmergencyStop()
+      } catch (err) {
+        console.error('Failed to trigger emergency stop:', err)
+      }
+      return
+    }
+
     if (command.action === 'HOME' || command.action === 'RESET') {
       setData((prev) => ({ ...prev, state: 'WAITING', arm: { ...HOME_ANGLES } }))
       try {

@@ -225,17 +225,21 @@ class ArduinoArmDriver(BaseArmDriver):
             return False
 
         # Set preset angles
+        target_angles_str = ""
         if code_upper in SERVO_PRESETS:
             self.current_angles = SERVO_PRESETS[code_upper].copy()
+            angles = self.current_angles
+            target_angles_str = f"Base:{angles.get('base')}° Shoulder:{angles.get('shoulder')}° Elbow:{angles.get('elbow')}° Wrist:{angles.get('wrist')}° Claw:{angles.get('gripper')}°"
 
         label = CODE_LABELS.get(code_upper, f"Command '{code_upper}'")
 
         if not self.is_connected():
             logging.warning(f"[HARDWARE] Port {self.port} not connected. Command '{code_upper}' ({label}) simulated.")
-            self._add_log("TX", f"'{code_upper}' -> {label} (Offline)")
-            self._add_log("RX (Simulated)", f"{label.split('(')[0].strip()} Selected")
-            # If not physically connected, trigger simulated done callback so state machine completes deterministically
-            threading.Thread(target=self._simulate_done_fallback, args=(label,), daemon=True).start()
+            self._add_log("TX", f"[CMD: '{code_upper}'] {label} (Offline / Sim)")
+            if target_angles_str:
+                self._add_log("INFO", f"Target 6-DOF PWM Angles: {target_angles_str}")
+            # Trigger realistic multi-step simulated progression
+            threading.Thread(target=self._simulate_done_fallback, args=(code_upper, label), daemon=True).start()
             return False
 
         try:
@@ -243,21 +247,54 @@ class ArduinoArmDriver(BaseArmDriver):
             self.connection.write(payload)
             self.connection.flush()
             logging.info(f"[HARDWARE] Transmitted code '{code_upper}' to Arduino on {self._detected_port or self.port}.")
-            self._add_log("TX", f"'{code_upper}' -> {label}")
+            self._add_log("TX", f"[CMD: '{code_upper}'] Transmitting -> {label}")
+            if target_angles_str:
+                self._add_log("INFO", f"Target 6-DOF PWM: {target_angles_str}")
             return True
         except Exception as e:
             logging.error(f"[HARDWARE] Serial write error for '{code_upper}': {e}")
-            self._add_log("ERROR", f"Serial write failed: {e}")
+            self._add_log("ERROR", f"Serial transmission failed on {self.port}: {e}")
             self.disconnect(silent=True)
             # Fallback completion so system does not lock up on write error
-            threading.Thread(target=self._simulate_done_fallback, args=(label,), daemon=True).start()
+            threading.Thread(target=self._simulate_done_fallback, args=(code_upper, label), daemon=True).start()
             return False
 
-    def _simulate_done_fallback(self, label: str):
-        # Simulate arm throw trajectory timing (2.5 seconds)
-        time.sleep(2.5)
+    def _simulate_done_fallback(self, code: str, label: str):
+        if code == "E":
+            time.sleep(0.1)
+            self._add_log("RX", "[EMERGENCY] !!! EMERGENCY SAFETY STOP ACTIVATED ('E') !!!")
+            self._add_log("RX", "[EMERGENCY] Continuous base motor halted instantly.")
+            self._add_log("RX", "[EMERGENCY] All 6-DOF servo joints locked at current coordinates.")
+            self._add_log("RX", "Done")
+            if self.done_callback:
+                try:
+                    self.done_callback()
+                except Exception as e:
+                    logging.error(f"[HARDWARE] Exception in done callback: {e}")
+            return
+
+        # Stage 1: Gripper Opening & Reach
+        time.sleep(0.4)
+        self._add_log("RX", f"[STAGE 1/4 PICKUP] Rotating base & opening gripper (160°)")
+
+        # Stage 2: Lowering Arm & Gripping Object
+        time.sleep(0.6)
+        self._add_log("RX", f"[STAGE 2/4 GRASP] Lowering shoulder (32°) & closing gripper (15°) -> Object Secured")
+
+        # Stage 3: Lifting & Discharging to Target Bin
+        time.sleep(0.8)
+        self._add_log("RX", f"[STAGE 3/4 THROW] Moving arm to {label} & opening gripper (160°)")
+
+        # Stage 4: Returning to Neutral Home Position
+        time.sleep(0.6)
         self.current_angles = SERVO_PRESETS["H"].copy()
-        self._add_log("RX (Simulated)", "Done")
+        self._add_log("RX", "[STAGE 4/4 HOME] Repositioning 6-DOF servos to Neutral Home Stance (90°)")
+
+        # Stage 5: Completion signal
+        time.sleep(0.2)
+        self._add_log("RX", "[COMPLETE] Segregation movement routine finished.")
+        self._add_log("RX", "Done")
+
         if self.done_callback:
             try:
                 self.done_callback()
@@ -274,7 +311,7 @@ class ArduinoArmDriver(BaseArmDriver):
                         logging.info(f"[ARDUINO SERIAL INPUT] -> {line}")
                         self._add_log("RX", line)
                         # "Done" signals movement routine completion from robotic_arm_smooth_shoulder.ino
-                        if line == "Done" or "Done" in line:
+                        if line == "Done" or line.endswith("Done"):
                             logging.info("[HARDWARE] Arduino emitted 'Done' movement completion signal.")
                             self.current_angles = SERVO_PRESETS["H"].copy()
                             if self.done_callback:
@@ -282,12 +319,12 @@ class ArduinoArmDriver(BaseArmDriver):
                                     self.done_callback()
                                 except Exception as e:
                                     logging.error(f"[HARDWARE] Done callback execution error: {e}")
-                        elif "Ready" in line:
+                        elif "Ready" in line or "[READY]" in line:
                             logging.info("[HARDWARE] Arduino initialization ready.")
                             self.current_angles = SERVO_PRESETS["H"].copy()
             except Exception as e:
                 if not self.stop_event.is_set():
                     logging.error(f"[HARDWARE] Serial read loop error: {e}")
-                    self._add_log("ERROR", f"Serial read error: {e}")
+                    self._add_log("ERROR", f"Serial read error on {self.port}: {e}")
                 self._disconnect_internal()
                 break

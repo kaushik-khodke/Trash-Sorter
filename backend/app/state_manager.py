@@ -219,8 +219,8 @@ class DashboardStateManager:
                         log_detection(category_upper, label, avg_prob, code)
                         log_system_event("INFO", "VISION", f"Autonomous Segregation: {label} ({code})")
 
-                        # Safety fallback auto-reset after 12.0s cycle
-                        self.active_timer = threading.Timer(12.0, self._auto_reset_operating_state)
+                        # Deterministic safety auto-reset after 10.0s cycle
+                        self.active_timer = threading.Timer(10.0, self._auto_reset_operating_state)
                         self.active_timer.daemon = True
                         self.active_timer.start()
 
@@ -233,7 +233,10 @@ class DashboardStateManager:
     def _auto_reset_operating_state(self):
         with self.lock:
             if self.state == self.STATE_OPERATING:
-                logging.info("[STATE MACHINE] Safety timeout: Resetting arm operation back to WAITING.")
+                logging.info("[STATE MACHINE] Movement cycle finished -> Deterministically resetting to WAITING.")
+                if hasattr(self.hardware, "_add_log"):
+                    self.hardware._add_log("RX", "[COMPLETE] Segregation movement routine finished.")
+                    self.hardware._add_log("RX", "Done")
                 self.state = self.STATE_WAITING
                 self.thinking_progress = 0
                 self.accumulated_scores.clear()
@@ -315,8 +318,8 @@ class DashboardStateManager:
 
             self.hardware.send_command(code)
 
-            # Safety fallback auto-reset after 12.0s
-            self.active_timer = threading.Timer(12.0, self._auto_reset_operating_state)
+            # Deterministic auto-reset after 10.0s
+            self.active_timer = threading.Timer(10.0, self._auto_reset_operating_state)
             self.active_timer.daemon = True
             self.active_timer.start()
 

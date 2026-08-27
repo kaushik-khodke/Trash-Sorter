@@ -271,7 +271,20 @@ export function ManualControlCard({
   }, [onCommand, isOperating])
 
   const handleTrigger = (action: ManualCommand['action'], code: string) => {
-    // Strictly prevent starting multiple simultaneous routines
+    // E-STOP is ALWAYS allowed and overrides any active sorting operation
+    if (action === 'STOP' || code === 'E') {
+      setActiveAction('STOP')
+      const newEntry: SerialLogEntry = {
+        timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
+        direction: 'TX',
+        data: `[EMERGENCY STOP] Triggered ('E') -> Immediate Motor Halt`,
+      }
+      setLocalLogs((prev) => [...prev.slice(-99), newEntry])
+      onCommand({ action: 'STOP', code: 'E' })
+      return
+    }
+
+    // Strictly prevent starting multiple simultaneous routines for categories/reset while operating
     if (isOperating) return
     setActiveAction(action)
 
@@ -279,7 +292,7 @@ export function ManualControlCard({
     const newEntry: SerialLogEntry = {
       timestamp: new Date().toLocaleTimeString('en-US', { hour12: false }),
       direction: 'TX',
-      data: `'${code}' -> ${action} Throw Routine`,
+      data: `'${code}' -> ${action} Routine`,
     }
     setLocalLogs((prev) => [...prev.slice(-99), newEntry])
 
@@ -621,20 +634,40 @@ export function ManualControlCard({
 
       {/* 4. Live Serial Monitor Terminal */}
       <div className="mt-4 border-t border-slate-200 pt-3">
-        <div className="flex items-center justify-between mb-2">
-          <button
-            type="button"
-            onClick={() => setShowTerminal(!showTerminal)}
-            className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 hover:text-sky-600 transition-colors"
-          >
-            <Terminal className="size-3.5 text-sky-600" />
-            <span>Live Arduino Serial Monitor</span>
-            {showTerminal ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowTerminal(!showTerminal)}
+              className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700 hover:text-sky-600 transition-colors"
+            >
+              <Terminal className="size-3.5 text-sky-600" />
+              <span>Live Arduino Serial Monitor</span>
+              {showTerminal ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+            </button>
+
+            {/* Connection Status Pill */}
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-bold border',
+                isConnected
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              )}
+            >
+              <span
+                className={cn(
+                  'size-1.5 rounded-full animate-pulse',
+                  isConnected ? 'bg-emerald-500' : 'bg-amber-500'
+                )}
+              />
+              {isConnected ? `${activePort} · ${baudRate} Baud` : 'SIMULATION MODE'}
+            </span>
+          </div>
 
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-slate-400">
-              {localLogs.length} messages
+              {localLogs.length} events
             </span>
             <button
               type="button"
@@ -652,38 +685,51 @@ export function ManualControlCard({
             {/* Terminal Log Console */}
             <div
               ref={terminalScrollRef}
-              className="h-36 overflow-y-auto space-y-1 text-xs pr-1 scrollbar-thin scrollbar-thumb-slate-700"
+              className="h-44 sm:h-52 overflow-y-auto space-y-1 text-xs pr-1 scrollbar-thin scrollbar-thumb-slate-700 divide-y divide-slate-900/60"
             >
               {localLogs.length === 0 ? (
-                <div className="text-slate-500 italic py-4 text-center">
-                  Serial monitor ready · Select COM port & click any trash button to transmit signals.
+                <div className="text-slate-500 italic py-8 text-center text-xs">
+                  Serial monitor initialized · Transmit category command or connect Arduino to view live serial telemetry stream.
                 </div>
               ) : (
                 localLogs.map((log, idx) => {
                   const isTX = log.direction.includes('TX')
                   const isRX = log.direction.includes('RX')
                   const isErr = log.direction.includes('ERROR')
+                  const isInfo = log.direction.includes('INFO')
+                  const isStage = log.data.includes('[STAGE')
+                  const isComplete = log.data.includes('[COMPLETE]') || log.data === 'Done'
+                  const isCmd = log.data.includes('[CMD')
 
                   return (
-                    <div key={idx} className="flex items-start gap-2 leading-relaxed break-all">
-                      <span className="text-slate-500 text-[10px] shrink-0">{log.timestamp}</span>
+                    <div key={idx} className="flex items-start gap-2 pt-1 pb-0.5 leading-relaxed break-all">
+                      <span className="text-slate-500 text-[10px] shrink-0 select-none">{log.timestamp}</span>
+                      
+                      {/* Direction Badge */}
                       <span
                         className={cn(
-                          'text-[10px] font-bold px-1 rounded shrink-0',
-                          isTX && 'bg-sky-900/80 text-sky-300 border border-sky-700',
-                          isRX && 'bg-emerald-900/80 text-emerald-300 border border-emerald-700',
-                          isErr && 'bg-rose-900/80 text-rose-300 border border-rose-700',
-                          !isTX && !isRX && !isErr && 'bg-purple-900/80 text-purple-300 border border-purple-700'
+                          'text-[9px] font-bold px-1.5 py-0.2 rounded shrink-0 uppercase tracking-wider select-none border',
+                          isTX && 'bg-sky-950 text-sky-400 border-sky-800',
+                          isRX && 'bg-emerald-950 text-emerald-400 border-emerald-800',
+                          isErr && 'bg-rose-950 text-rose-400 border-rose-800',
+                          isInfo && 'bg-purple-950 text-purple-400 border-purple-800',
+                          !isTX && !isRX && !isErr && !isInfo && 'bg-slate-900 text-slate-400 border-slate-700'
                         )}
                       >
                         {log.direction}
                       </span>
+
+                      {/* Log Message with Stage Styling */}
                       <span
                         className={cn(
-                          'text-slate-200',
-                          isTX && 'text-sky-200',
-                          isRX && 'text-emerald-200 font-semibold',
-                          isErr && 'text-rose-300'
+                          'text-slate-200 text-xs flex-1',
+                          isTX && 'text-sky-300 font-medium',
+                          isRX && 'text-emerald-300',
+                          isStage && 'text-amber-300 font-semibold',
+                          isComplete && 'text-emerald-400 font-bold',
+                          isCmd && 'text-sky-200 font-bold',
+                          isErr && 'text-rose-400 font-semibold',
+                          isInfo && 'text-purple-300 text-[11px]'
                         )}
                       >
                         {log.data}
@@ -695,13 +741,14 @@ export function ManualControlCard({
             </div>
 
             {/* Quick Test Bar & Raw Serial Input */}
-            <div className="mt-2.5 pt-2 border-t border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
               <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
                 <span className="text-[10px] text-slate-400 font-bold uppercase shrink-0">Quick Test:</span>
                 {['P', 'M', 'C', 'A', 'G', 'H'].map((char) => (
                   <button
                     key={char}
                     type="button"
+                    disabled={isOperating}
                     onClick={() => {
                       setRawCommandInput(char)
                       handleTrigger(
@@ -719,7 +766,7 @@ export function ManualControlCard({
                         char
                       )
                     }}
-                    className="rounded bg-slate-800 hover:bg-sky-600 hover:text-white px-2 py-0.5 text-[11px] font-bold text-slate-300 border border-slate-700 transition-colors"
+                    className="rounded bg-slate-800 hover:bg-sky-600 hover:text-white px-2 py-0.5 text-[11px] font-bold text-slate-300 border border-slate-700 transition-colors disabled:opacity-40"
                   >
                     [{char}]
                   </button>
@@ -731,14 +778,16 @@ export function ManualControlCard({
                   type="text"
                   placeholder="Send raw character (e.g. P)..."
                   value={rawCommandInput}
+                  disabled={isOperating}
                   onChange={(e) => setRawCommandInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSendRaw()}
-                  className="flex-1 rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1 text-xs text-white placeholder-slate-500 outline-none focus:border-sky-500"
+                  className="flex-1 rounded-lg bg-slate-900 border border-slate-700 px-2.5 py-1 text-xs text-white placeholder-slate-500 outline-none focus:border-sky-500 disabled:opacity-40 font-mono"
                 />
                 <button
                   type="button"
+                  disabled={isOperating || !rawCommandInput.trim()}
                   onClick={handleSendRaw}
-                  className="rounded-lg bg-sky-600 px-3 py-1 text-xs font-bold text-white hover:bg-sky-700 transition-colors shadow-2xs"
+                  className="rounded-lg bg-sky-600 px-3 py-1 text-xs font-bold text-white hover:bg-sky-700 transition-colors shadow-2xs disabled:opacity-40 shrink-0"
                 >
                   Send
                 </button>
