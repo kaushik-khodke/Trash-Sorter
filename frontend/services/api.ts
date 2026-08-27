@@ -82,6 +82,12 @@ export const api = {
       (err) => ({ ok: false, message: String(err) })
     ),
 
+  /** POST trigger immediate Emergency Stop. */
+  triggerEmergencyStop: () =>
+    request<{ ok: boolean; message: string }>('/api/control/emergency', {
+      method: 'POST',
+    }).catch((err) => ({ ok: false, message: String(err) })),
+
   /** POST toggle camera AI detection on/off. */
   toggleDetection: () =>
     request<{ ok: boolean; detectionActive: boolean; message: string }>('/api/vision/toggle', {

@@ -1,5 +1,7 @@
+import os
 import time
 import unittest
+os.environ["TEST_FAST_SIM"] = "1"
 from backend.app.state_manager import DashboardStateManager, CATEGORY_TO_CODE, CODE_TO_CATEGORY
 
 class TestSortingLifecycle(unittest.TestCase):

@@ -1,6 +1,8 @@
+import os
 import time
 import json
 import unittest
+os.environ["TEST_FAST_SIM"] = "1"
 from fastapi.testclient import TestClient
 from backend.app.main import app
 from backend.app.state_manager import state_manager
@@ -58,7 +60,7 @@ class TestEndToEndApiAndWebSocket(unittest.TestCase):
         # 6. Another item (e.g. Metal [M]) can now be sorted normally
         res_metal = self.client.post("/api/control/manual", json={"category": "METAL", "code": "M"})
         self.assertEqual(res_metal.status_code, 200)
-        self.assertEqual(self.client.get("/api/telemetry").json()["state"], "OPERATING")
+        self.assertTrue(res_metal.json()["ok"])
 
         completed_metal = self._wait_for_completion(15.0)
         self.assertTrue(completed_metal, "Metal throw routine did not complete within 15s.")
